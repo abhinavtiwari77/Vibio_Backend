@@ -1,4 +1,4 @@
-# HealWell Backend API
+# Vibio Backend API
 
 A comprehensive mental wellness platform backend built with Node.js, Express, MongoDB, and Socket.IO. This RESTful API provides authentication, user management, social features, real-time messaging, and community support functionality.
 
