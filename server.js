@@ -64,6 +64,10 @@ io.on('connection', (socket) => {
     io.emit('getOnlineUsers', Array.from(onlineUsers.keys()));
   }
 
+  socket.on('requestOnlineUsers', () => {
+    socket.emit('getOnlineUsers', Array.from(onlineUsers.keys()));
+  });
+
   // Regular conversation handling
   socket.on('joinConversation', (conversationId) => {
     if (conversationId) {
@@ -81,6 +85,71 @@ io.on('connection', (socket) => {
     if (conversationId && message) {
       io.to(String(conversationId)).emit('newMessage', { conversationId, message });
     }
+  });
+
+  // WebRTC signaling for 1:1 call flow
+  socket.on('call:initiate', (payload = {}) => {
+    const { toUserId, fromUserId, conversationId, offer, isVideo, callId } = payload;
+    if (!toUserId || !fromUserId || !conversationId || !offer) return;
+
+    io.to(String(toUserId)).emit('call:incoming', {
+      toUserId: String(toUserId),
+      fromUserId: String(fromUserId),
+      conversationId: String(conversationId),
+      offer,
+      isVideo: Boolean(isVideo),
+      callId: callId || null
+    });
+  });
+
+  socket.on('call:accept', (payload = {}) => {
+    const { toUserId, fromUserId, conversationId, answer, callId } = payload;
+    if (!toUserId || !fromUserId || !conversationId || !answer) return;
+
+    io.to(String(toUserId)).emit('call:accepted', {
+      toUserId: String(toUserId),
+      fromUserId: String(fromUserId),
+      conversationId: String(conversationId),
+      answer,
+      callId: callId || null
+    });
+  });
+
+  socket.on('call:reject', (payload = {}) => {
+    const { toUserId, fromUserId, conversationId, callId } = payload;
+    if (!toUserId || !fromUserId || !conversationId) return;
+
+    io.to(String(toUserId)).emit('call:rejected', {
+      toUserId: String(toUserId),
+      fromUserId: String(fromUserId),
+      conversationId: String(conversationId),
+      callId: callId || null
+    });
+  });
+
+  socket.on('call:end', (payload = {}) => {
+    const { toUserId, fromUserId, conversationId, callId } = payload;
+    if (!toUserId || !fromUserId || !conversationId) return;
+
+    io.to(String(toUserId)).emit('call:ended', {
+      toUserId: String(toUserId),
+      fromUserId: String(fromUserId),
+      conversationId: String(conversationId),
+      callId: callId || null
+    });
+  });
+
+  socket.on('call:ice-candidate', (payload = {}) => {
+    const { toUserId, fromUserId, conversationId, candidate, callId } = payload;
+    if (!toUserId || !fromUserId || !conversationId || !candidate) return;
+
+    io.to(String(toUserId)).emit('call:ice-candidate', {
+      toUserId: String(toUserId),
+      fromUserId: String(fromUserId),
+      conversationId: String(conversationId),
+      candidate,
+      callId: callId || null
+    });
   });
 
   // Typing indicators

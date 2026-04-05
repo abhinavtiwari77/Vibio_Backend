@@ -131,9 +131,15 @@ exports.sendMessage = async (req, res) => {
     await message.populate('sender', 'name profilePicUrl');
     const io = getIO(req);
     if (io) {
-      io.to(String(conversation._id)).emit('newMessage', {
+      const payload = {
         conversationId: String(conversation._id),
         message
+      };
+
+      io.to(String(conversation._id)).emit('newMessage', payload);
+
+      conversation.participants.forEach((participantId) => {
+        io.to(String(participantId)).emit('newMessage', payload);
       });
     }
 

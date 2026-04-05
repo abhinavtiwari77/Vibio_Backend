@@ -1,6 +1,14 @@
 const User = require("../models/user");
 const bcrypt = require("bcrypt");
 const { uploadBufferToCloudinary, cloudinary } = require("../utils/upload");
+const Notification = require("../models/Notification");
+
+function emitToUser(req, userId, event, payload) {
+  const io = req.app?.locals?.io;
+  if (io && userId) {
+    io.to(String(userId)).emit(event, payload);
+  }
+}
 
 exports.getUserById = async (req, res) => {
   try {
@@ -149,6 +157,8 @@ exports.toggleFollow = async (req, res) => {
       me.following = me.following.filter(id => id.toString() !== targetId);
       await targetUser.save();
       await me.save();
+      emitToUser(req, targetId, 'followRequestUpdated', { type: 'unfollowed', userId: meId });
+      emitToUser(req, meId, 'followRequestUpdated', { type: 'unfollowed', userId: targetId });
       return res.json({ status: 'unfollowed', msg: 'Unfollowed user' });
     } else if (isRequested) {
       // Cancel request
@@ -156,6 +166,8 @@ exports.toggleFollow = async (req, res) => {
       me.sentRequests = me.sentRequests.filter(id => id.toString() !== targetId);
       await targetUser.save();
       await me.save();
+      emitToUser(req, targetId, 'followRequestUpdated', { type: 'cancelled', userId: meId });
+      emitToUser(req, meId, 'followRequestUpdated', { type: 'cancelled', userId: targetId });
       return res.json({ status: 'cancelled', msg: 'Follow request cancelled' });
     } else {
       // Send request
@@ -163,6 +175,18 @@ exports.toggleFollow = async (req, res) => {
       me.sentRequests.push(targetId);
       await targetUser.save();
       await me.save();
+
+      const followRequestNotification = await Notification.create({
+        recipient: targetId,
+        sender: meId,
+        type: 'follow_request',
+        isRead: false
+      });
+
+      const populatedNotif = await followRequestNotification.populate('sender', 'name profilePicUrl');
+      emitToUser(req, targetId, 'newNotification', populatedNotif);
+      emitToUser(req, targetId, 'followRequestUpdated', { type: 'requested', userId: meId });
+      emitToUser(req, meId, 'followRequestUpdated', { type: 'requested', userId: targetId });
       return res.json({ status: 'requested', msg: 'Follow request sent' });
     }
   } catch (err) {
@@ -197,6 +221,18 @@ exports.acceptFollowRequest = async (req, res) => {
     await me.save();
     await requester.save();
 
+    const followAcceptedNotification = await Notification.create({
+      recipient: requesterId,
+      sender: meId,
+      type: 'follow',
+      isRead: false
+    });
+    const populatedNotif = await followAcceptedNotification.populate('sender', 'name profilePicUrl');
+
+    emitToUser(req, requesterId, 'newNotification', populatedNotif);
+    emitToUser(req, requesterId, 'followRequestUpdated', { type: 'accepted', userId: meId });
+    emitToUser(req, meId, 'followRequestUpdated', { type: 'accepted', userId: requesterId });
+
     return res.json({ msg: "Request accepted" });
   } catch (err) {
     console.error("acceptFollowRequest error", err);
@@ -222,6 +258,9 @@ exports.rejectFollowRequest = async (req, res) => {
 
     await me.save();
     await requester.save();
+
+    emitToUser(req, requesterId, 'followRequestUpdated', { type: 'rejected', userId: meId });
+    emitToUser(req, meId, 'followRequestUpdated', { type: 'rejected', userId: requesterId });
 
     return res.json({ msg: "Request rejected" });
   } catch (err) {
