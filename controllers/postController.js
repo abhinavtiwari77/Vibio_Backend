@@ -2,10 +2,84 @@ const Post = require("../models/Post");
 const User = require("../models/user");
 const { uploadBufferToCloudinary, cloudinary } = require("../utils/upload");
 
-async function uploadFilesToCloudinary(files = []) {
+function parseMediaEdits(input) {
+  if (!input) return [];
+  if (Array.isArray(input)) return input;
+  try {
+    return JSON.parse(input);
+  } catch (e) {
+    return [];
+  }
+}
+
+function normalizeRatio(value) {
+  if (typeof value !== 'string') return 'original';
+  const trimmed = value.trim();
+  if (trimmed === 'original') return 'original';
+  return /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(trimmed) ? trimmed : 'original';
+}
+
+function getEditForFile(file, index, mediaEdits, usedIndexes) {
+  if (!Array.isArray(mediaEdits) || mediaEdits.length === 0) return {};
+
+  const byIdentityIndex = mediaEdits.findIndex((edit, editIdx) => {
+    if (usedIndexes.has(editIdx)) return false;
+    return edit &&
+      edit.fileName === file.originalname &&
+      edit.fileType === file.mimetype &&
+      Number(edit.fileSize || 0) === Number(file.size || 0);
+  });
+
+  if (byIdentityIndex !== -1) {
+    usedIndexes.add(byIdentityIndex);
+    return mediaEdits[byIdentityIndex] || {};
+  }
+
+  if (mediaEdits[index] && !usedIndexes.has(index)) {
+    usedIndexes.add(index);
+    return mediaEdits[index] || {};
+  }
+
+  const firstUnused = mediaEdits.findIndex((_, editIdx) => !usedIndexes.has(editIdx));
+  if (firstUnused !== -1) {
+    usedIndexes.add(firstUnused);
+    return mediaEdits[firstUnused] || {};
+  }
+
+  return {};
+}
+
+function buildTransformedUrl({ publicId, isVideo, size }) {
+  const numericSize = size && size !== 'original' ? parseInt(size, 10) : null;
+
+  if (!numericSize) return null;
+
+  const transformation = {};
+  if (numericSize && Number.isFinite(numericSize)) {
+    transformation.width = numericSize;
+    transformation.crop = 'limit';
+  }
+
+  if (isVideo) transformation.quality = 'auto';
+
+  return cloudinary.url(publicId, {
+    secure: true,
+    resource_type: isVideo ? 'video' : 'image',
+    transformation: [transformation]
+  });
+}
+
+async function uploadFilesToCloudinary(files = [], mediaEdits = []) {
   const uploaded = [];
-  for (const f of files) {
+  const usedEditIndexes = new Set();
+  for (let i = 0; i < files.length; i += 1) {
+    const f = files[i];
     const isVideo = f.mimetype.startsWith('video/');
+    const edit = getEditForFile(f, i, mediaEdits, usedEditIndexes);
+    const ratio = normalizeRatio(edit.ratio);
+    const size = edit.size || 'original';
+    const fitMode = 'contain';
+
     const options = {
       folder: 'wellness/posts',
       resource_type: isVideo ? 'video' : 'image',
@@ -13,10 +87,31 @@ async function uploadFilesToCloudinary(files = []) {
       unique_filename: true
     };
     const res = await uploadBufferToCloudinary(f.buffer, options);
+
+    const transformedUrl = buildTransformedUrl({
+      publicId: res.public_id,
+      isVideo,
+      size
+    });
+
+    const normalizedOriginalRatio = normalizeRatio(edit.originalRatio);
+    const fallbackOriginalRatio = normalizedOriginalRatio !== 'original'
+      ? normalizedOriginalRatio
+      : 'original';
+
+    const resolvedAspectRatio = ratio === 'original'
+      ? (res.width && res.height ? `${res.width}:${res.height}` : fallbackOriginalRatio)
+      : ratio;
+
     uploaded.push({
-      url: res.secure_url,
+      url: transformedUrl || res.secure_url,
+      original_url: res.secure_url,
       public_id: res.public_id,
-      resource_type: isVideo ? 'video' : 'image'
+      resource_type: isVideo ? 'video' : 'image',
+      aspectRatio: resolvedAspectRatio,
+      fitMode,
+      width: res.width || null,
+      height: res.height || null
     });
   }
   return uploaded;
@@ -26,12 +121,13 @@ const Notification = require("../models/Notification");
 
 exports.createPost = async (req, res) => {
   try {
-    let { content, mediaUrl, community } = req.body;
+    let { content, mediaUrl, community, mediaEdits } = req.body;
     let media = [];
+    const parsedEdits = parseMediaEdits(mediaEdits);
 
     if (Array.isArray(req.files) && req.files.length > 0) {
       try {
-        const uploaded = await uploadFilesToCloudinary(req.files);
+        const uploaded = await uploadFilesToCloudinary(req.files, parsedEdits);
         media = uploaded;
       } catch (err) {
         console.error("Cloudinary upload failed", err);
@@ -136,7 +232,8 @@ exports.editPost = async (req, res) => {
       return res.status(403).json({ msg: "Not allowed" });
     }
 
-    const { content, removePublicIds } = req.body;
+    const { content, removePublicIds, mediaEdits } = req.body;
+    const parsedEdits = parseMediaEdits(mediaEdits);
     let removeIds = [];
     try {
       if (removePublicIds) {
@@ -167,7 +264,7 @@ exports.editPost = async (req, res) => {
     }
     if (Array.isArray(req.files) && req.files.length > 0) {
       try {
-        const uploaded = await uploadFilesToCloudinary(req.files);
+        const uploaded = await uploadFilesToCloudinary(req.files, parsedEdits);
         post.media.push(...uploaded);
       } catch (err) {
         console.error('Cloudinary upload failed', err);
