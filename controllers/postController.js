@@ -1,5 +1,5 @@
 const Post = require("../models/Post");
-const User = require("../models/user");
+const User = require("../models/User");
 const { uploadBufferToCloudinary, cloudinary } = require("../utils/upload");
 
 function parseMediaEdits(input) {

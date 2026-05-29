@@ -1,4 +1,4 @@
-const User = require("../models/user");
+const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const { uploadBufferToCloudinary, cloudinary } = require("../utils/upload");
 const Notification = require("../models/Notification");
