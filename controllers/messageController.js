@@ -1,7 +1,7 @@
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const mongoose = require('mongoose');
-const User = require('../models/user');
+const User = require('../models/User');
 
 function getIO(req) {
   return req.app?.locals?.io;

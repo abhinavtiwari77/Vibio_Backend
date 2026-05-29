@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const UserModel = require('../models/user');
+const UserModel = require('../models/User');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -62,10 +62,31 @@ exports.login = async (req, res) => {
     const normalizedEmail = String(email).trim().toLowerCase();
 
     const user = await UserModel.findOne({ email: normalizedEmail });
-    if (!user) return res.status(400).json({ msg: 'Invalid credentials' });
 
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) return res.status(400).json({ msg: 'Invalid credentials' });
+    if (!user) {
+      if (process.env.NODE_ENV !== 'production') console.warn(`Login attempt for unknown email: ${normalizedEmail}`);
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+
+    // Support legacy documents that might have stored the hash under `password`.
+    const storedHash = user.passwordHash || user.password || null;
+    if (!storedHash) {
+      if (process.env.NODE_ENV !== 'production') console.warn(`User ${normalizedEmail} has no password hash stored`);
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+
+    let isMatch = false;
+    try {
+      isMatch = await bcrypt.compare(password, storedHash);
+    } catch (compareErr) {
+      console.error('bcrypt compare error', compareErr);
+      return res.status(500).json({ msg: 'Server error' });
+    }
+
+    if (!isMatch) {
+      if (process.env.NODE_ENV !== 'production') console.warn(`Invalid password for email: ${normalizedEmail}`);
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
 
     const token = signToken(user);
 

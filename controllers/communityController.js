@@ -1,5 +1,5 @@
 const Community = require('../models/Community');
-const User = require('../models/user');
+const User = require('../models/User');
 const slugify = require('slugify'); // tiny helper
 
 function makeSlug(name) {

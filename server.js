@@ -13,7 +13,23 @@ const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 
-app.use(cors());
+// Use a single env var for the frontend origin in production.
+// In development you can leave FRONTEND_URL undefined to allow all origins.
+const frontendOrigin = process.env.FRONTEND_URL || '*';
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || frontendOrigin === '*' || origin === frontendOrigin) {
+      // allow requests with no origin (like server-to-server or curl)
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 connectDB();
@@ -46,7 +62,9 @@ const server = http.createServer(app);
 const { Server } = require('socket.io');
 const io = new Server(server, {
   cors: {
-    origin: '*'
+    origin: frontendOrigin,
+    methods: ['GET', 'POST'],
+    credentials: true,
   }
 });
 
