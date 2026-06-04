@@ -1,4 +1,4 @@
-Frontend Code of Vibio - https://github.com/abhinavtiwari77/Vibio_Backend
+Frontend Code of Vibio - https://github.com/abhinavtiwari77/Vibio_Frontend
 
 Deployed Link - https://vibio-frontend.onrender.com
 
